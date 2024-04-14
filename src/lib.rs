@@ -39,6 +39,10 @@ pub struct Line {
     pub row_index: usize,
 }
 
+// pub fn make_req() -> Result<String, String> {
+//     let body: String = reqwest::blocking::get(url: "https://www.rust-lang.org")?.text()?;
+// }
+
 pub fn par_examine_dir(dir: &Path, _pattern: &str) -> Result<HashMap<String, Vec<Line>>, Box<dyn Error>> {
     let pattern = ".rs";
     let acc = std::sync::Mutex::new(Vec::<String>::new());

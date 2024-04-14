@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 //Searches a path for duplicate files
 use clap::Parser;
+use console_engine::{pixel, rect_style::BorderStyle, screen::Screen};
 use todooer::Line;
 
 #[derive(Parser)]
@@ -40,11 +41,43 @@ fn main() {
             let path = PathBuf::from(path);
 
 
+            let mut scr = Screen::new(101,31);
+
             // let mutex = todooer::examine_dir(&path, &pattern);
             // let data = mutex.lock().unwrap();
             // println!("{:?}", data);
-
-            let _ = todooer::par_examine_dir(&path, &pattern);
+            let res = todooer::par_examine_dir(&path, &pattern);
+            // draw some shapes and prints some text
+            scr.rect_border(0,0, 100,30, BorderStyle::new_light());
+            scr.fill_circle(5,5, 3, pixel::pxl('*'));
+            scr.print(40,5, "Report of Todos");
+            scr.fill_circle(90,5, 3, pixel::pxl('*'));
+            // let _ = res.unwrap().iter().map(|(k,v)| {
+            //     scr.print(20,1, k);
+            //     let mut combo = Vec::<String>::new();
+            //     let _ =  v.iter().map(|line| {
+            //         combo.push(line.line_text.clone());
+            //     });
+            //     scr.print(20,4, &combo.join(":"));
+            //     // scr.print(11,4, &line.line_text);
+            //     // scr.print(12,4, &line.line_num.to_string());
+            //     // scr.print(13,4, &line.priority.to_string());
+            //     // scr.print(14,4, &line.filename);
+            // });
+            for (key, val) in res.unwrap() {
+                scr.print(20,15, &key);
+                let mut combo = Vec::<String>::new();
+                for line in val {
+                    combo.push(line.line_text.clone().trim().to_string());
+                }
+                scr.print(2,15, &combo.join("\n"));
+                // scr.print(11,4, &line.line_text);
+                // scr.print(12,4, &line.line_num.to_string());
+                // scr.print(13,4, &line.priority.to_string());
+                // scr.print(14,4, &line.filename);
+            }
+            // print the screen to the terminal
+            scr.draw();
         }
 
         None => {
