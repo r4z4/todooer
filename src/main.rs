@@ -5,6 +5,7 @@ use console_engine::{pixel, rect_style::BorderStyle, screen::Screen};
 use crossterm::{event::{self, Event, KeyCode}, terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen}, ExecutableCommand};
 use ratatui::{backend::CrosstermBackend, layout::{Constraint, Rect}, style::{Color, Style, Stylize}, widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState}, Frame, Terminal};
 use todooer::Line;
+use lazy_static::lazy_static;
 
 #[derive(Parser)]
 #[command(name = "todooer")]
@@ -19,6 +20,31 @@ use todooer::Line;
 struct Cli {
     #[clap(subcommand)]
     command: Option<Commands>,
+}
+
+// Use phf crate for performance if need
+// Do I also look for the beginning symbol for block comments?
+lazy_static!{
+    static ref COMM_SYM: HashMap<&'static str, (&'static str, &'static str)> = [
+        (".rs", ("//", "//")),
+        (".rb", ("#", "#")),
+        (".elm", ("--", "{-")),
+        (".f90", ("!", "!")),
+        (".java", ("//", "/*")),
+        (".c", ("//", "/*")),
+        (".cpp", ("//", "/*")),
+        (".cc", ("//", "/*")),
+        (".cp", ("//", "/*")),
+        (".c++", ("//", "/*")),
+        (".kt", ("//", "/*")),
+        (".ex", ("#", "#")),
+        (".py", ("#", "#")),
+        (".erl", ("%", "%")),
+        (".hs", ("--", "{-")),
+        (".lhs", ("--", "{-")),
+        (".exs", ("#", "#")),
+        (".go", ("//", "/*")),
+    ].iter().copied().collect();
 }
 
 #[derive(Parser)]
@@ -107,6 +133,14 @@ fn ui(frame: &mut Frame, res: HashMap<String, Vec<Line>>) {
     frame.render_stateful_widget(table, Rect::new(0, 0, 80, row_count), &mut table_state);
 }
 
+pub fn validate_path_and_pattern(path: &PathBuf, pattern: &str) -> bool {
+    let path_str = path.as_path().to_str().unwrap();
+    if !COMM_SYM.contains_key(pattern) {
+        println!("Path specified not a supported file extension")
+    }
+    true
+}
+
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -114,6 +148,7 @@ fn main() -> io::Result<()> {
             //count files matching a pattern
             println!("Counting files in {} matching {}", path, pattern);
             let path = PathBuf::from(path);
+            let valid = validate_path_and_pattern(&path, &pattern);
             let res = todooer::par_examine_dir(&path, &pattern);
             let unw = res.unwrap();
             enable_raw_mode()?;
