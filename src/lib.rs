@@ -30,7 +30,7 @@ pub fn get_comment_lines(filepath: &PathBuf) -> std::io::Result<Vec<(usize, Stri
     Ok(correct_lines)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Line {
     pub line_text: String,
     pub line_num: usize,
