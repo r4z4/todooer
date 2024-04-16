@@ -7,9 +7,35 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use lazy_static::lazy_static;
 use walkdir::WalkDir;
 // TODO What
 static MATCHES: &'static [&str] = &["TODO", "FIXME"];
+
+// Use phf crate for performance if need
+// Do I also look for the beginning symbol for block comments?
+lazy_static!{
+    pub static ref COMM_SYM: HashMap<&'static str, (&'static str, &'static str)> = [
+        (".rs", ("//", "//")),
+        (".rb", ("#", "#")),
+        (".elm", ("--", "{-")),
+        (".f90", ("!", "!")),
+        (".java", ("//", "/*")),
+        (".c", ("//", "/*")),
+        (".cpp", ("//", "/*")),
+        (".cc", ("//", "/*")),
+        (".cp", ("//", "/*")),
+        (".c++", ("//", "/*")),
+        (".kt", ("//", "/*")),
+        (".ex", ("#", "#")),
+        (".py", ("#", "#")),
+        (".erl", ("%", "%")),
+        (".hs", ("--", "{-")),
+        (".lhs", ("--", "{-")),
+        (".exs", ("#", "#")),
+        (".go", ("//", "/*")),
+    ].iter().copied().collect();
+}
 
 pub fn get_comment_lines(filepath: &PathBuf) -> std::io::Result<Vec<(usize, String)>> {
     let mut file = BufReader::new(File::open(filepath)?);
@@ -37,21 +63,22 @@ pub struct Line {
     pub priority: usize,
     pub filename: String,
     pub row_index: usize,
+    pub proper: bool
 }
 
 // pub fn make_req() -> Result<String, String> {
 //     let body: String = reqwest::blocking::get(url: "https://www.rust-lang.org")?.text()?;
 // }
 
-pub fn par_examine_dir(dir: &Path, _pattern: &str) -> Result<HashMap<String, Vec<Line>>, Box<dyn Error>> {
+pub fn par_examine_dir(dir: &Path, pattern: &str) -> Result<HashMap<String, Vec<Line>>, Box<dyn Error>> {
     let pattern = ".rs";
     let acc = std::sync::Mutex::new(Vec::<String>::new());
     let _ = list_files(dir, pattern, &acc);
     dbg!(&acc);
-    par_get_comments(acc)
+    par_get_comments(acc, pattern)
 }
 
-pub fn par_get_comments(acc: Mutex<Vec<String>>) -> Result<HashMap<String, Vec<Line>>, Box<dyn Error>> {
+pub fn par_get_comments(acc: Mutex<Vec<String>>, pattern: &str) -> Result<HashMap<String, Vec<Line>>, Box<dyn Error>> {
     let officials = std::sync::Mutex::new(HashMap::new());
     // let mut guard = acc.lock().unwrap();
     // let val = *guard;
@@ -67,8 +94,8 @@ pub fn par_get_comments(acc: Mutex<Vec<String>>) -> Result<HashMap<String, Vec<L
             dbg!(&file, &lines);
             // Consumes the iterator, returns an (Optional) String
             let new = lines.iter().map(|line| {
-                let (idx, priority) = handle_t(&line.1);
-                Line{line_text: line.1.to_owned(), line_num: line.0 + 1, filename: file.to_owned(), priority: priority, row_index: idx}
+                let (idx, priority, proper) = handle_t(&line.1, pattern);
+                Line{line_text: line.1.to_owned(), line_num: line.0 + 1, filename: file.to_owned(), priority: priority, row_index: idx, proper: proper}
             }).collect::<Vec<Line>>();
             dbg!(&new);
             officials.lock().unwrap().insert(file.to_owned(), new);
@@ -120,25 +147,26 @@ pub fn find_todo(line: &str) -> Result<usize, &str> {
     let idx = line.find("TODO");
     match idx {
         Some(idx) => {
+            // let proper = is_proper(line, idx, pattern);
             Ok(idx)
         },
         None => Err("No Todo Found")
     }
 }
 
-pub fn handle_t(line: &str) -> (usize, usize) {
+pub fn handle_t(line: &str, pattern: &str) -> (usize, usize, bool) {
     // let mut char_indices = line.char_indices();
     let idx = find_todo(line);
     match idx {
         Ok(idx) => {
             println!("{} is the start", idx);
-            let (_old, rem) = line.split_at(idx);
-            let priority = get_priority(rem);
-            (idx, priority)
+            let (old, rem) = line.split_at(idx);
+            let (priority, proper) = get_priority_and_proper(pattern, old, rem);
+            (idx, priority, proper)
         },
         Err(err) => {
             dbg!("Nothing");
-            (0, 0)
+            (0, 0, false)
         }
     }
 }
@@ -189,11 +217,27 @@ impl<I> Iterator for SequentialCount<I>
     }
 }
 
+pub fn is_proper(pattern: &str, old: &str) -> bool {
+    let syms = COMM_SYM[pattern];
+    // Proper = // TODO or # TODO or /* TODO etc...
+    let last_three = {
+        let split_pos = old.char_indices().nth_back(2).unwrap().0;
+        &old[split_pos..]
+    };
+    let possible_prefixes = vec![syms.0.to_owned() + " ",syms.1.to_owned() + " "];
+    let proper = if possible_prefixes.contains(&last_three.to_string()) {true} else {false};
+    proper
+}
+
 // At his point we have our Todo
-pub fn get_priority(line: &str) -> usize {
+pub fn get_priority_and_proper(pattern: &str, old: &str, rem: &str) -> (usize, bool) {
+    let mut proper = false;
+    if old.len() >= 3 {
+        proper = is_proper(pattern, old);
+    };
     // Might be TODO or TODOOOOOO
     // If todo, split on the d to avoid the first o
-    let (_one, two) = line.split_at(3);
+    let (_one, two) = rem.split_at(3);
     let chars = two.chars().peekable();
     dbg!(&chars);
     let mut char_iter = chars.into_iter();
@@ -213,13 +257,13 @@ pub fn get_priority(line: &str) -> usize {
                 }
                 // The next element doesn't match the current value 
                 // complete this iteration 
-                return count
+                return (count, proper)
             }
             // The inner iterator is complete, so we are also complete
             None => 0,
         };
 
-    count
+    (count, proper)
 
     // let counts = SequentialCount::new(line.chars());
     // for (char, count) in counts {
@@ -341,12 +385,12 @@ pub fn get_priority(line: &str) -> usize {
 //     }
 // }
 
-pub fn walk_file_for_lines(entry: &PathBuf) -> Result<Vec<Line>, String> {
+pub fn walk_file_for_lines(entry: &PathBuf, pattern: &str) -> Result<Vec<Line>, String> {
     if let Ok(lines) = get_comment_lines(&entry) {
         // Consumes the iterator, returns an (Optional) String
         let new = lines.iter().map(|line| {
-            let (idx, priority) = handle_t(&line.1);
-            Line{line_text: line.1.to_owned(), line_num: line.0, filename: entry.file_name().unwrap().to_str().unwrap().to_owned(), priority: priority, row_index: idx}
+            let (idx, priority, proper) = handle_t(&line.1, pattern);
+            Line{line_text: line.1.to_owned(), line_num: line.0, filename: entry.file_name().unwrap().to_str().unwrap().to_owned(), priority: priority, row_index: idx, proper: proper}
         }).collect::<Vec<Line>>();
         Ok(new)
     } else {

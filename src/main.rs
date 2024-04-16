@@ -22,31 +22,6 @@ struct Cli {
     command: Option<Commands>,
 }
 
-// Use phf crate for performance if need
-// Do I also look for the beginning symbol for block comments?
-lazy_static!{
-    static ref COMM_SYM: HashMap<&'static str, (&'static str, &'static str)> = [
-        (".rs", ("//", "//")),
-        (".rb", ("#", "#")),
-        (".elm", ("--", "{-")),
-        (".f90", ("!", "!")),
-        (".java", ("//", "/*")),
-        (".c", ("//", "/*")),
-        (".cpp", ("//", "/*")),
-        (".cc", ("//", "/*")),
-        (".cp", ("//", "/*")),
-        (".c++", ("//", "/*")),
-        (".kt", ("//", "/*")),
-        (".ex", ("#", "#")),
-        (".py", ("#", "#")),
-        (".erl", ("%", "%")),
-        (".hs", ("--", "{-")),
-        (".lhs", ("--", "{-")),
-        (".exs", ("#", "#")),
-        (".go", ("//", "/*")),
-    ].iter().copied().collect();
-}
-
 #[derive(Parser)]
 enum Commands {
     //create count with path and pattern defaults for both
@@ -135,7 +110,7 @@ fn ui(frame: &mut Frame, res: HashMap<String, Vec<Line>>) {
 
 pub fn validate_path_and_pattern(path: &PathBuf, pattern: &str) -> bool {
     let path_str = path.as_path().to_str().unwrap();
-    if !COMM_SYM.contains_key(pattern) {
+    if !todooer::COMM_SYM.contains_key(pattern) {
         println!("Path specified not a supported file extension")
     }
     true
@@ -223,7 +198,8 @@ mod tests {
     #[test]
     fn test_walk_file() {
         let path = PathBuf::from("./src/main.rs");
-        let lines = todooer::walk_file_for_lines(&path).unwrap();
+        let pattern = ".rs";
+        let lines = todooer::walk_file_for_lines(&path, pattern).unwrap();
         assert!(lines.len() > 0)
     }
 
@@ -287,30 +263,33 @@ mod tests {
     #[test]
     fn test_handle_t() {
         let line1 = "TODOOOOOO";
-        let (idx, priority) = todooer::handle_t(line1);
+        let pattern = ".rs";
+        let (idx, priority, proper) = todooer::handle_t(line1, pattern);
         assert_eq!(priority, 6);
 
         let line = "some other T comments TODOOOOOOOO";
-        let (idx, priority) = todooer::handle_t(line);
+        let (idx, priority, proper) = todooer::handle_t(line, pattern);
         assert_eq!(priority, 8);
     }
 
     #[test]
-    fn test_get_priority() {
-        let line_6 = "TODOOOOOO";
-        let res = todooer::get_priority(line_6);
-        assert_eq!(res, 6);
+    fn test_get_priority_and_proper() {
+        let pattern = ".rs";
+        let rem_6 = "TODOOOOOO";
+        let old = "as long as last 3 good // ";
+        let res = todooer::get_priority_and_proper(pattern, old, rem_6);
+        assert_eq!(res, (6, true));
 
-        let line_17 = "TODOOOOOOOOOOOOOOOOO";
-        let res = todooer::get_priority(line_17);
-        assert_eq!(res, 17);
+        let rem_17 = "TODOOOOOOOOOOOOOOOOO";
+        let res = todooer::get_priority_and_proper(pattern, old, rem_17);
+        assert_eq!(res, (17, true));
 
-        let line_17 = "TODOOOOOOOOOOOOOOOOO_OOOOOOOOOOO";
-        let res = todooer::get_priority(line_17);
-        assert_eq!(res, 17);
+        let rem_17 = "TODOOOOOOOOOOOOOOOOO_OOOOOOOOOOO";
+        let res = todooer::get_priority_and_proper(pattern, old, rem_17);
+        assert_eq!(res, (17, true));
 
-        let line = "TODO";
-        let res = todooer::get_priority(line);
-        assert_eq!(res, 1);
+        let rem = "TODO";
+        let res = todooer::get_priority_and_proper(pattern, old, rem);
+        assert_eq!(res, (1, true));
     }
 }
